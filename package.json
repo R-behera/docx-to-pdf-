@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
-    "docx-pdf": "^0.0.2",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
   }
 }
