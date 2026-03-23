@@ -1,9 +1,9 @@
 const express = require('express');
 const AdmZip = require('adm-zip');
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { convertToPdf } = require('docx-pdf');
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -20,17 +20,14 @@ app.post('/convert', (req, res) => {
   const pdfPath = path.join(tmpDir, 'resume.pdf');
 
   try {
-    // Write DOCX to disk
     const docxBuffer = Buffer.from(docx_base64, 'base64');
     fs.writeFileSync(docxPath, docxBuffer);
 
-    // Replace placeholders in document.xml using AdmZip
     if (placeholder_map && Object.keys(placeholder_map).length > 0) {
       const zip = new AdmZip(docxPath);
       let docXml = zip.readAsText('word/document.xml');
 
       for (const [placeholder, value] of Object.entries(placeholder_map)) {
-        // Replace even if XML splits the placeholder across tags
         const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         docXml = docXml.replace(new RegExp(escaped, 'g'), String(value || ''));
       }
@@ -39,22 +36,16 @@ app.post('/convert', (req, res) => {
       zip.writeZip(docxPath);
     }
 
-    // Convert to PDF using LibreOffice
-    execSync(`libreoffice --headless --convert-to pdf --outdir ${tmpDir} ${docxPath}`, {
-      timeout: 60000
+    convertToPdf(docxPath, pdfPath, (err) => {
+      if (err) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        return res.status(500).json({ error: err.message });
+      }
+
+      const pdfBase64 = fs.readFileSync(pdfPath).toString('base64');
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return res.json({ pdf_base64: pdfBase64 });
     });
-
-    if (!fs.existsSync(pdfPath)) {
-      throw new Error('PDF conversion failed - file not created');
-    }
-
-    const pdfBuffer = fs.readFileSync(pdfPath);
-    const pdfBase64 = pdfBuffer.toString('base64');
-
-    // Cleanup
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-
-    return res.json({ pdf_base64: pdfBase64 });
 
   } catch (err) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
